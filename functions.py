@@ -184,7 +184,13 @@ def extrapolate(targets, x, y):
   
   return y
   
+def extrapolate1(targets, x, y):
+
+  for target in targets:
+    fit = np.polyfit(x[:-1], y[target].iloc[:-1],2)
+    y[target].iloc[-1] = np.poly1d(fit)[-1]
   
+  return y  
   
   
   
