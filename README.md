@@ -1,8 +1,9 @@
 # Small Profits adn Quick Returns: A Practical Social Welfare Maximizing Incentive Mechanisms for Deadline-sensitive Tasks in Crowdsourcing
-This is python code for my ongoing research work published in AAAI HCOMP 2017 WiP paper. You can access to the paper through this [link](https://arxiv.org/abs/1707.00018).
+This is python code for the paper work published in IEEE Internet of Things Journal. You can access to the paper through this [link](https://ieeexplore.ieee.org/document/8897639).
 
 ## Prerequisites
-To run this code, you need to install 'numpy', 'pandas', 'matplotlib' packages.
+Language: Python
+Required Packages: numpy, pandas, 'matplotlib'
 ```
 pip3 install numpy pandas matplotlib
 ```
