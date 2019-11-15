@@ -2,9 +2,10 @@
 This is python code for the paper work published in IEEE Internet of Things Journal. You can access to the paper through this [link](https://ieeexplore.ieee.org/document/8897639).
 
 ## Prerequisites
-Language: Python //
-Required Packages: numpy, pandas, 'matplotlib'
+- Language: Python 
+- Required Packages: numpy, pandas, 'matplotlib'
+- To install the required packages, type the following command: 
 ```
-pip3 install numpy pandas matplotlib
+pip install numpy pandas matplotlib
 ```
 
