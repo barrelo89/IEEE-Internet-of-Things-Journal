@@ -7,9 +7,9 @@ This is python code for the paper work published in IEEE Internet of Things Jour
 - To install the required packages, type the following command:
 1) Python 2
 ```
-pip install numpy pandas matplotlib
+pip install numpy pandas matplotlib munkres
 ```
 2) Python 3
 ```
-pip3 install numpy pandas matplotlib
+pip3 install numpy pandas matplotlib munkres
 ```
