@@ -17,7 +17,6 @@ pip3 install numpy pandas matplotlib munkres
 ## Running the code
 - Class 'task': task.py, Class 'provider' or 'worker': provider.py, and Class 'platform': platform.py
 1) Visualization of the behavior of task
-![Alt text](/media/duin/SAMSUNG1/Research/IEEE Internet of Things Journal/Python Code/figure/task_value.pdf?raw=true "Title")
 ```
 python3 task_figure.py
 ```
