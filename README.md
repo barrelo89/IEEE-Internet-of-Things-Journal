@@ -13,3 +13,7 @@ pip install numpy pandas matplotlib munkres
 ```
 pip3 install numpy pandas matplotlib munkres
 ```
+
+## Running the code
+- Class 'task': task.py
+- Class 'provider': provider.py
