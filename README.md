@@ -20,7 +20,6 @@ pip3 install numpy pandas matplotlib munkres
 ```
 python3 task_figure.py
 ```
-[embed]figure/task_value.pdf[/embed]
 2) Visualization of the punctual behavior of worker 
 ```
 python3 provider_figure.py
