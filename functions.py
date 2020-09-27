@@ -1,234 +1,329 @@
-import random
-import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import truncnorm
 from sklearn.metrics import auc
 from task import Tasks
-from provider import Provider 
+from provider import Provider
 from platforms import Platform
+from munkres import Munkres
+import random
+import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 import itertools
+import sys
+import time
+
+def TaskSizer(W_requesters):
+
+    task_size = []
+
+    for requester in W_requesters:
+        task_size.append(requester.task_size_)
+
+    return np.array(task_size)
+
+def BudgetBalanceCheck(fee, payment):
+    return np.sum(fee) - np.sum(payment)
+
+def CostCalculator(providers, task_sizes):
+
+    cost = []
+
+    for provider, task_size in zip(providers, task_sizes):
+        cost.append(provider.bid_*task_size)
+
+    return sum(cost)
 
 def TaskCreator(n,max_value, max_alpha, max_deadline, max_task_size):
-  creatures=[]
-  for _ in np.arange(n):
-    creatures.append(Tasks(max_value, max_alpha, max_deadline, max_task_size))#types, type_range, max_value, max_deadline, expiry)
-  return np.array(creatures)
 
-def ProviderCreator(n, max_mu, max_provider_bid, max_provider_skill):
-  creatures =[]
-  
-  for i in np.arange(n):
-    creatures.append(Provider(max_mu, max_provider_bid, max_provider_skill))
-  
-  return np.array(creatures)  
+    creatures=[]
 
-def SystemExpectedSocialwelfare(task_creatures, provider_creatures, time_unit):#done
-  system_social_welfare=[]
-  for task, provider in zip(task_creatures, provider_creatures):
-    system_social_welfare.append(auc(task.TaskValueFunction(time_unit)[1], task.TaskValueFunction(time_unit)[0]*provider.prob_distribution(task, time_unit)[0]))
-  return np.sum(system_social_welfare)
+    for _ in np.arange(n):
+        creatures.append(Tasks(max_value, max_alpha, max_deadline, max_task_size))#types, type_range, max_value, max_deadline, expiry)
 
-def SocialWelfare(task_creatures, provider_creatures, time_unit, match):#done: proposed_expected_socialwelfare
-  welfare = []
-  for req_index, pro_index in list(match.items()):
-    welfare.append(auc(task_creatures[int(req_index)].TaskValueFunction(time_unit)[1], task_creatures[int(req_index)].TaskValueFunction(time_unit)[0]*provider_creatures[int(pro_index)].prob_distribution(task_creatures[int(req_index)], time_unit)[0]))
-  
-  return np.sum(welfare)
+    return np.array(creatures)
 
-def benchmark_satisfaction_level(requester_preference_ordering):
-  rank = []
-  for i in range(len(requester_preference_ordering)):
-    rank.append(np.where(requester_preference_ordering.loc[i]==i)[0][0])
-    
-  return np.array(rank), np.mean(rank)
+def ProviderCreator(n, max_mu, max_provider_bid, time_unit):
 
-#def bench_distribution(b_rank):
-#  pdf = []
-#  cdf = []
-#  
-#  for i in range(1,11):
-#    
-#      if i == 1:
-#        pdf.append(len(np.where(b_rank < len(b_rank)*i/10)[0]))
-#        cdf.append(len(np.where(b_rank < len(b_rank)*i/10)[0]))
-#      else:
-#      
-#        tmp = len(np.where(b_rank < len(b_rank)*(i-1)/10)[0])
-#        pdf.append(len(np.where(b_rank < len(b_rank)*i/10)[0])- tmp)    
-#        cdf.append(len(np.where(b_rank < len(b_rank)*i/10)[0]))
-#      
-#  return np.array(pdf) / sum(pdf), np.array(cdf) / len(b_rank)
+    creatures =[]
 
-def bench_distribution(b_rank):
-  pdf = []
-  cdf = []
-  
-  for i in range(len(b_rank)):
-    pdf.append(len(np.where(b_rank == i)[0]) / len(b_rank))
-    cdf.append(len(np.where(b_rank <= i)[0]) / len(b_rank))
-  
-  return np.array(pdf), np.array(cdf)
+    for _ in range(n):
+        creatures.append(Provider(max_mu, max_provider_bid, time_unit))
+        #creatures.append(Provider(max_mu, max_provider_bid, max_provider_skill))
+
+    return np.array(creatures)
+
+def MereSW(requesters): #mere social welfare: assume all the requested task would be completed in deadline
+
+    social_welfare = []
+
+    for requester in requesters:
+
+        social_welfare.append(requester.original_value_)
+
+    return sum(social_welfare)
+
+def ExpectedSW(task_creatures, provider_creatures): #expected social welfare
+
+    expected_social_welfare = []
+
+    for task, provider in zip(task_creatures, provider_creatures):
+        expected_social_welfare.append(auc(task.TaskValueFunction(provider.time_unit)[1], task.TaskValueFunction(provider.time_unit)[0]*provider.prob_distribution(task)[0]))
+
+    return np.sum(expected_social_welfare)
+
+def PostSW(W_requesters, W_providers): #after submission, realized values
+
+    welfare = []
+    submission_time = []
+
+    for requester, provider in zip(W_requesters, W_providers):
+
+        t_sub = provider.submit(requester)
+        submission_time.append(t_sub)
+
+        value = requester.time_variant_value(t_sub, provider.time_unit)
+        welfare.append(value)
+
+    return sum(welfare), np.array(submission_time)
+
+def TimeVariantMoney(t_sub, W_requesters, W_providers, fee, payment): #return time-variant fee & payment without SMA
+
+    changed_fee = []
+    changed_payment = []
+
+    for requester, provider, time, f, p in zip(W_requesters, W_providers, t_sub, fee, payment):
+        value = requester.time_variant_value(time, provider.time_unit)
+        achievement_ratio = value / requester.original_value_
+        changed_payment.append(achievement_ratio*p)
+        changed_fee.append(achievement_ratio*f)
+
+    return np.array(changed_fee), np.array(changed_payment)
+
+def CreateProfitMatrix(tasks, providers): #row: requesters, column: providers
+
+    profit_matrix = []
+
+    #start_time = time.process_time()
+
+    for t_idx, task in enumerate(tasks):
+
+        profit_matrix_row = []
+
+        for p_idx, provider in enumerate(providers):
+            expected_profit = auc(task.TaskValueFunction(provider.time_unit)[1],task.TaskValueFunction(provider.time_unit)[0]*provider.prob_distribution(task)[0]) - provider.bid_*task.task_size_
+            profit_matrix_row.append(expected_profit)
+
+        profit_matrix.append(profit_matrix_row)
+
+    #end_time = time.process_time()
+    #print('matrix:', end_time - start_time)
+
+    return np.array(profit_matrix)
+
+def HungarianSelection(profit_matrix):
+
+    min_element = abs(profit_matrix.min())
+    max_element = profit_matrix.max()
+
+    input_profit_matrix = max_element - (profit_matrix + min_element)
+    #input_profit_matrix = sys.maxsize - (profit_matrix + min_element)
+    #input_profit_matrix = sys.maxsize - profit_matrix
+
+    #start_time = time.process_time()
+    hungarian = Munkres()
+    selected_pairs = hungarian.compute(input_profit_matrix)
+
+    #end_time = time.process_time()
+    #print('selection:', end_time - start_time)
+
+    selected_requesters_idx = []
+    selected_providers_idx = []
+
+    expected_social_welfare = []
+
+    for pair in selected_pairs:
+
+        selected_requesters_idx.append(pair[0])
+        selected_providers_idx.append(pair[1])
+        expected_social_welfare.append(profit_matrix[pair[0], pair[1]])
+
+    selected_requesters_idx = np.array(selected_requesters_idx)
+    selected_providers_idx = np.array(selected_providers_idx)
+    expected_social_welfare = np.array(expected_social_welfare)
+
+    sw_sorted_idx = np.argsort(expected_social_welfare)[::-1] #in an descending order
+
+    sorted_expected_social_welfare = expected_social_welfare[sw_sorted_idx]
+    sorted_selected_requesters_idx = selected_requesters_idx[sw_sorted_idx]
+    sorted_selected_providers_idx = selected_providers_idx[sw_sorted_idx]
+
+    return sorted_expected_social_welfare, sorted_selected_requesters_idx, sorted_selected_providers_idx
+#----------------------------------------------visualization functions--------------------------------------------------
+def DataExtraction(data_sequence):
+
+    result = []
+    #[mere_SW, expected_SW, realized_SW, pre_budget, post_budget, payment, fee, changed_payment, changed_fee, cost, running_time]
+    for data in data_sequence:
+        result.append(data)
+        #data.shape = 10x11 (# of capacity values x # of result values)
+
+    return np.array(result)
+
+def DataTrimming(data_matrix):
+
+    output = []
+
+    if len(data_matrix.shape) == 3: #3D data matrtix
+
+        num_layer, num_row, num_col = data_matrix.shape #num_layer: # of iteration, num_row: kinds of capacity variation, num_col: kinds of result values
+
+        for row_idx in range(num_row):
+
+            row_result = []
+
+            for layer_idx in range(num_layer):
+
+                if data_matrix[layer_idx, row_idx, 0] != 0:
+                    row_result.append(data_matrix[layer_idx, row_idx, :])
+
+            if len(row_result) == 0:
+                row_result = [0 for _ in range(num_col)]
+            else:
+                row_result = np.array(row_result).mean(axis = 0)
+
+            row_result = [item for item in row_result]
+
+            output.append(row_result)
+
+        return np.array(output)
+
+    if len(data_matrix.shape) == 4: #4D data matrix
+
+        num_layer, num_provider, num_row, num_col = data_matrix.shape #num_layer: # of iteration, num_provider: kinds of provider #, num_row: kinds of capacity variation, num_col: kinds of result values
+
+        result = []
+
+        for provider_idx in range(num_provider):
+
+            provider_result = []
+
+            for row_idx in range(num_row):
+
+                row_result = []
+
+                for layer_idx in range(num_layer):
+
+                    if data_matrix[layer_idx, provider_idx, row_idx, 0] != 0:
+
+                        row_result.append(data_matrix[layer_idx, provider_idx, row_idx, :])
+
+                if len(row_result) == 0:
+                    row_result = [0 for _ in range(num_col)]
+                else:
+                    row_result = np.array(row_result).mean(axis = 0)
+
+                row_result = [item for item in row_result]
+                provider_result.append(row_result)
+            result.append(provider_result)
+
+        return np.array(result)
 
 
 
-def task_provider_plot(task, provider):
-  fig, ax1 = plt.subplots()
-  ax2 = ax1.twinx()
-  
-  values, X_axis = task.TaskValueFunction(0.01)
-  probability, cdf, x_axis = provider.prob_distribution(task, 0.01)
-  print('cdf: %f' %auc(x_axis, probability))
-  
-  ax2.plot(x_axis, probability, color = 'b', label = 'pdf')
-  ax2.plot(x_axis, cdf, color = 'r', label = 'cdf')
-  ax1.plot(X_axis, values, marker = 'o', markersize = 4, color = 'g', label = 'Task Value')
-  ax1.plot([task.deadline_,task.deadline_],[0, max([task.original_value_+task.original_value_*0.1, 1.1])], ls = '--', label = 'deadline')
-  ax1.plot([task.expiry_,task.expiry_],[0, max([task.original_value_+task.original_value_*0.1, 1.1])], ls = '-.', label = 'expiry') 
-  #plt.legend(loc = 'best', fontsize = 25)
-  ax1.set_xlabel('Time(t)').set_fontsize(25)
-  ax1.set_ylabel('Task Value').set_fontsize(25)
-  ax2.set_ylabel('PDF/CDF').set_fontsize(25)
-  ax1.tick_params(labelsize = 20)
-  ax2.tick_params(labelsize = 20)
 
-  ax1.set_xlim([0, task.expiry_+task.expiry_*0.1])
-  ax1.set_ylim([0, max([task.original_value_+task.original_value_*0.1, 1.1])])
-  plt.tight_layout()
-  plt.show()
-  
-def Proposed_SocialWelfare(W_requesters, W_providers, time_unit, match):
-  
-  welfare = []
-  
-  dic_t_sub = {}
-  
-  for requester, provider in list(match.items()):
-    
-    probability, cdf, x_axis = W_providers[int(provider)].prob_distribution(W_requesters[int(requester)], time_unit)
-    t_sub = W_providers[int(provider)].submit(x_axis, probability)
-    
-    dic_t_sub[int(provider)] = t_sub
-    
-    value = W_requesters[int(requester)].time_variant_value(t_sub, time_unit)
-    welfare.append(value)
 
-  return sum(welfare), dic_t_sub    
 
-def Existing_SocialWelfare(W_requesters, W_providers, time_unit):
-  
-  welfare = []
-  time = []
-  
-  for requester, provider in zip(W_requesters, W_providers):
-   
-    probability, cdf, x_axis = provider.prob_distribution(requester, time_unit)
-    t_sub = provider.submit(x_axis, probability) 
-    
-    time.append(t_sub)
-    value = requester.time_variant_value(t_sub, time_unit)
-    welfare.append(value)
 
-  return sum(welfare), np.array(time)
 
-def time_variant_money(t_sub, W_requesters, W_providers, fee, payment, match, time_unit): #return time-variant fee n payment for SMA
-  #t_sub: dictionary indicating each provider's submission time_unit
-  #W_requester, W_providers가 capacity+1 만큼 select하는 것을 기억하자.
-  
-  changed_fee = []   
-  changed_payment = []  
-  
-  for requester, provider in list(match.items()):
-    
-    value = W_requesters[int(requester)].time_variant_value(t_sub[int(provider)], time_unit)
-    achievement_ratio = value / W_requesters[int(requester)].original_value_
-    changed_payment.append(achievement_ratio*payment[int(provider)])
-    changed_fee.append(achievement_ratio*fee[int(requester)])
 
-  return np.array(changed_fee), np.array(changed_payment)
-  
-def bench_time_variant_money(t_sub, W_requesters, W_providers, fee, payment, time_unit): #return time-variant fee n payment without SMA
-  
-  changed_fee = []   
-  changed_payment = []  
-  
-  for requester, provider, time, f, p in zip(W_requesters, W_providers, t_sub, fee, payment):
-    value = requester.time_variant_value(time, time_unit)
-    achievement_ratio = value / requester.original_value_
-    changed_payment.append(achievement_ratio*p)
-    changed_fee.append(achievement_ratio*f)
 
-  return np.array(changed_fee), np.array(changed_payment)  
-  
-def budget_balance_check(fee, payment):
-  return np.sum(fee) - np.sum(payment)   
-  
-def mere_social_welfare(requesters): #the existing works가 가정한 deadline내에 다 submit한다고 할 때, social welfare이다.
-  social_welfare = []
-  for requester in requesters:
-    social_welfare.append(requester.original_value_)
-  return sum(social_welfare)
-    
-def cost_calculator(providers):
-    cost = []
-    for provider in providers:
-      cost.append(provider.bid_)
-    
-    return sum(cost)
-  
-def extrapolate(targets, x, y):
 
-  for target in targets:
-    fit = np.polyfit(x[1:], y[target].iloc[1:],2)
-    y[target].iloc[0] = np.poly1d(fit)[0]
-  
-  return y
-  
-def extrapolate1(targets, x, y):
 
-  for target in targets:
-    fit = np.polyfit(x[:-1], y[target].iloc[:-1],2)
-    y[target].iloc[-1] = np.poly1d(fit)[-1]
-  
-  return y  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-#  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
+def DataExtraction(data_sequence):
+
+    result = []
+
+    for data in data_sequence:
+        result.append(pd.DataFrame(data, columns = ['mere_SW', 'expected_SW', 'realized_SW', 'pre_budget', 'post_budget', 'payment', 'fee', 'changed_payment', 'changed_fee', 'cost', 'running_time']))
+
+    return result
+
+def DataTrimming(data_list):
+
+    result = []
+    mean_matrix = []
+
+    for data in data_list:
+
+        mean_layer_matrix = []
+
+        for payment, fee, changed_payment, changed_fee, SW in zip(data['payment'], data['fee'], data['changed_payment'], data['changed_fee'], data['mere_SW']):
+
+            mean_row_matrix = []
+
+            if SW > 0:
+
+                payment = payment.sum()
+                fee = fee.sum()
+                changed_payment = changed_payment.sum()
+                changed_fee = changed_fee.sum()
+
+            for item in [payment, fee, changed_payment, changed_fee]:
+                mean_row_matrix.append(item)
+
+            mean_layer_matrix.append(mean_row_matrix)
+
+        result.append(data.values[:, [0, 1, 2, 3, 4, 9, 10]])
+        mean_matrix.append(mean_layer_matrix)
+
+    result = np.array(result)
+    mean_matrix = np.array(mean_matrix)
+
+    result = np.concatenate([result, mean_matrix], axis = 2)
+
+
+    num_layer, num_row, num_col = result.shape
+
+    output = []
+
+    for row_idx in range(num_row):
+
+        row_result = []
+
+        for layer_idx in range(num_layer):
+
+            if result[layer_idx, row_idx, 0] != 0:
+                row_result.append(result[layer_idx, row_idx, :])
+
+        if len(row_result) == 0:
+            row_result = [0 for _ in range(num_col)]
+        else:
+            row_result = np.array(row_result).mean(axis = 0)
+
+        row_result = [item for item in row_result]
+
+        output.append(row_result)
+
+    return np.array(output)
+'''
+#
