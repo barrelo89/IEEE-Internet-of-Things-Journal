@@ -194,7 +194,10 @@ for _ in range(num_iter):
     for pro in process:
         pro.terminate()
 
-pickle.dump(result, open("new_capacity_result.p", 'wb'))
+data_save_path = 'data/capacity_result'
+if not os.path.exists(data_save_path):
+    os.makedirs(data_save_path)
+pickle.dump(result, open(os.path.join(data_save_path, "new_capacity_result.p"), 'wb'))
 
 
 

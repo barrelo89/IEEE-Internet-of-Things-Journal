@@ -270,7 +270,8 @@ for _ in range(num_iter):
     for pro in process:
         pro.terminate()
 
-pickle.dump(result, open("optimal_latest.p", 'wb'))
+data_save_path = 'data/optimal'
+pickle.dump(result, open(os.path.join(data_save_path, "optimal_latest.p"), 'wb'))
 
 
 

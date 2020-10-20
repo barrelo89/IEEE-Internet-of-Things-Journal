@@ -1,9 +1,11 @@
+
 from task import Tasks
 from provider import Provider
 from platforms import Platform
 from functions import*
 from munkres import Munkres
-import sys
+
+import os
 import multiprocessing
 import numpy as np
 import time
@@ -147,7 +149,8 @@ for _ in range(num_iter):
     for pro in process:
         pro.terminate()
 
-pickle.dump(result, open("new_parameter_result.p", 'wb'))
+data_save_path = 'data/parameter'
+pickle.dump(result, open(os.path.join(data_save_path, "new_parameter_result.p"), 'wb'))
 
 
 
