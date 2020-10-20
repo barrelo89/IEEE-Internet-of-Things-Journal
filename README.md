@@ -16,6 +16,7 @@ pip3 install numpy pandas matplotlib munkres
 
 ## Running the code
 - Class 'task': task.py, Class 'provider' or 'worker': provider.py, and Class 'platform': platform.py
+- Since some of simulations may take quite a long time, simulation results are attached in 'data' directory.
 1) Visualization of the behavior of task
 ```
 python3 task_figure.py
